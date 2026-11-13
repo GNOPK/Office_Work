@@ -16,11 +16,9 @@
   h1{font-size:22px;margin:0 0 4px}
   .lead{color:var(--sub);margin:0 0 20px}
   .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:18px;margin-bottom:16px}
-  .drop{border:2px dashed #9fb3cc;border-radius:10px;padding:28px 16px;text-align:center;cursor:pointer;transition:.15s;background:#fafcff}
-  .drop.over{border-color:var(--accent);background:#eef4ff}
-  .drop b{font-size:16px}
-  .drop small{display:block;color:var(--sub);margin-top:6px}
-  textarea{width:100%;min-height:130px;border:1px solid var(--line);border-radius:8px;padding:10px;
+  .steps{margin:0 0 12px;padding-left:20px;line-height:1.9}
+  kbd{display:inline-block;padding:0 6px;border:1px solid #b9c2cf;border-bottom-width:2px;border-radius:4px;background:#f7f9fb;font-family:inherit;font-size:12px}
+  textarea{width:100%;min-height:180px;border:1px solid var(--line);border-radius:8px;padding:10px;
     font-family:Consolas,"D2Coding",monospace;font-size:13px;resize:vertical}
   .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px}
   button{border:1px solid var(--line);background:#fff;color:var(--ink);padding:9px 16px;border-radius:8px;
@@ -47,18 +45,18 @@
 <body>
 <div class="wrap">
   <h1>OGP 측정데이터 → 엑셀 보고서</h1>
-  <p class="lead">측정기에서 받은 텍스트 파일을 넣으면 엑셀 보고서(.xlsx)로 만들어 줍니다. 인터넷 연결 없이 동작합니다.</p>
+  <p class="lead">측정 텍스트를 복사해서 붙여넣으면 엑셀 보고서(.xlsx)로 만들어 줍니다. 파일 업로드나 인터넷 연결 없이 동작합니다.</p>
 
   <div class="card">
-    <div class="drop" id="drop">
-      <b>텍스트 파일을 여기로 끌어다 놓기</b>
-      <small>또는 클릭해서 파일 선택 · 여러 파일을 한 번에 넣으면 파일별로 시트가 나뉩니다</small>
-      <input type="file" id="file" accept=".txt,.dat,.csv,text/plain" multiple hidden>
-    </div>
-    <div class="or">— 또는 텍스트 내용을 그대로 붙여넣기 —</div>
-    <textarea id="paste" placeholder='1, "Warpage_3.DX", 7.5500, 7.5536, 0.5, -0.5, 0.0036&#10;...&#10;EOT'></textarea>
+    <ol class="steps">
+      <li>측정 텍스트 파일을 메모장으로 열고 <kbd>Ctrl</kbd>+<kbd>A</kbd> → <kbd>Ctrl</kbd>+<kbd>C</kbd></li>
+      <li>아래 칸을 클릭하고 <kbd>Ctrl</kbd>+<kbd>V</kbd> — 붙여넣는 즉시 아래에 결과가 나옵니다</li>
+      <li>[엑셀 파일 다운로드] 또는 [표 복사] 후 엑셀에 <kbd>Ctrl</kbd>+<kbd>V</kbd></li>
+    </ol>
+    <textarea id="paste" autofocus placeholder='여기에 Ctrl+V&#10;&#10;1, "Warpage_3.DX", 7.5500, 7.5536, 0.5, -0.5, 0.0036&#10;...&#10;EOT'></textarea>
     <div class="row">
-      <button id="btnPaste">붙여넣은 내용 변환</button>
+      <label class="hint" for="fname">파일 이름</label>
+      <input type="text" id="fname" placeholder="비우면 측정보고서_날짜_시간" style="flex:1;min-width:180px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font:inherit">
       <button id="btnClear">초기화</button>
     </div>
   </div>
@@ -189,40 +187,27 @@ function render(){
   document.getElementById("copyMsg").textContent = "";
 }
 
-/* ---------- 입력 ---------- */
-function decode(buf){
-  try { return new TextDecoder("utf-8",{fatal:true}).decode(buf); }
-  catch(e){ try { return new TextDecoder("euc-kr").decode(buf); } catch(e2){ return new TextDecoder().decode(buf); } }
-}
-function handleFiles(files){
-  files = Array.prototype.slice.call(files);
-  if (!files.length) return;
-  Promise.all(files.map(function(f){
-    return f.arrayBuffer().then(function(b){ return {name: f.name.replace(/\.[^.]+$/,""), text: decode(b)}; });
-  })).then(function(list){
-    results = list.map(function(x){ var p = parseText(x.text); return {name:x.name, rows:p.rows, warnings:p.warnings}; });
-    render();
-  });
-}
-var drop = document.getElementById("drop"), fileIn = document.getElementById("file");
-drop.addEventListener("click", function(){ fileIn.click(); });
-fileIn.addEventListener("change", function(){ handleFiles(fileIn.files); fileIn.value=""; });
-["dragenter","dragover"].forEach(function(ev){ drop.addEventListener(ev,function(e){e.preventDefault();drop.classList.add("over");}); });
-["dragleave","drop"].forEach(function(ev){ drop.addEventListener(ev,function(e){e.preventDefault();drop.classList.remove("over");}); });
-drop.addEventListener("drop", function(e){ handleFiles(e.dataTransfer.files); });
-document.addEventListener("dragover", function(e){ e.preventDefault(); });
-document.addEventListener("drop", function(e){ e.preventDefault(); });
-
-document.getElementById("btnPaste").addEventListener("click", function(){
-  var t = document.getElementById("paste").value;
-  if (!t.trim()){ alert("붙여넣은 내용이 없습니다."); return; }
+/* ---------- 입력 (붙여넣기 전용) ---------- */
+var pasteBox = document.getElementById("paste");
+function convert(){
+  var t = pasteBox.value;
+  if (!t.trim()){ results = []; document.getElementById("result").hidden = true; return; }
   var p = parseText(t);
+  if (!p.rows.length){
+    results = [];
+    document.getElementById("out").innerHTML = '<div class="warn">인식된 측정 데이터가 없습니다. 텍스트 파일 내용을 그대로 붙여넣었는지 확인해 주세요.'+
+      (p.warnings.length ? "\n\n"+esc(p.warnings.slice(0,10).join("\n")) : "")+'</div>';
+    document.getElementById("result").hidden = false;
+    return;
+  }
   results = [{name:"측정결과", rows:p.rows, warnings:p.warnings}];
   render();
-});
+}
+var timer = null;
+pasteBox.addEventListener("input", function(){ clearTimeout(timer); timer = setTimeout(convert, 150); });
 document.getElementById("btnClear").addEventListener("click", function(){
-  results = []; document.getElementById("paste").value = "";
-  document.getElementById("result").hidden = true;
+  results = []; pasteBox.value = ""; document.getElementById("fname").value = "";
+  document.getElementById("result").hidden = true; pasteBox.focus();
 });
 
 /* ---------- 표 복사 ---------- */
@@ -357,8 +342,8 @@ function stamp(){ var d=new Date(),p=function(n){return (n<10?"0":"")+n;}; retur
 document.getElementById("btnXlsx").addEventListener("click", function(){
   if (!results.length) return;
   var blob = buildXlsx();
-  var fname = (results.length===1 && results[0].name!=="측정결과" ? results[0].name : "측정보고서_"+stamp()) + "_보고서.xlsx";
-  if (results.length===1 && results[0].name==="측정결과") fname = "측정보고서_"+stamp()+".xlsx";
+  var custom = document.getElementById("fname").value.trim().replace(/[\\\/:*?"<>|]/g,"_").replace(/\.xlsx$/i,"");
+  var fname = (custom || "측정보고서_"+stamp()) + ".xlsx";
   var a = document.createElement("a");
   a.href = URL.createObjectURL(blob); a.download = fname;
   document.body.appendChild(a); a.click(); a.remove();
